@@ -770,7 +770,21 @@ class ScoringEngine {
     const evalResult = engine.evaluate(studentInput, studentScores, row);
     compareList.push({ id: ++compareSeq, row, evalResult });
     renderCompare();
-    logEvent('add_university', { univ: row.univ, unit: row.unit, admName: row.admName, detailTrack: row.detailTrack, verdict: evalResult.verdict });
+    {
+      const s = studentScores;
+      logEvent('add_university', {
+        guSubject: s.gu.subject,
+        suSubject: s.su.subject,
+        tam1Subject: s.tam1.subject,
+        tam2Subject: s.tam2.subject,
+        stdSum: s.gu.std + s.su.std + s.tam1.std + s.tam2.std,
+        pctSum: s.gu.pct + s.su.pct + s.tam1.pct + s.tam2.pct,
+        univ: row.univ,
+        unit: row.unit,
+        admName: row.admName,
+        detailTrack: row.detailTrack,
+      });
+    }
 
     // 다음 대학을 바로 이어서 검색할 수 있도록 선택 영역을 초기화
     lastMatchedUniv = null;
