@@ -773,12 +773,12 @@ class ScoringEngine {
     {
       const s = studentScores;
       logEvent('add_university', {
-        guSubject: s.gu.subject,
-        suSubject: s.su.subject,
-        tam1Subject: s.tam1.subject,
-        tam2Subject: s.tam2.subject,
+        guSubject: s.gu.subject, guStd: s.gu.std, guPct: s.gu.pct,
+        suSubject: s.su.subject, suStd: s.su.std, suPct: s.su.pct,
+        tam1Subject: s.tam1.subject, tam1Std: s.tam1.std, tam1Pct: s.tam1.pct,
+        tam2Subject: s.tam2.subject, tam2Std: s.tam2.std, tam2Pct: s.tam2.pct,
         stdSum: s.gu.std + s.su.std + s.tam1.std + s.tam2.std,
-        pctSum: s.gu.pct + s.su.pct + s.tam1.pct + s.tam2.pct,
+        pctSum: s.gu.pct + s.su.pct + (s.tam1.pct + s.tam2.pct) / 2,
         univ: row.univ,
         unit: row.unit,
         admName: row.admName,
