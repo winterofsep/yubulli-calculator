@@ -245,8 +245,10 @@
             <th class="col-center">국어</th>
             <th class="col-center">수학</th>
             <th class="col-center">탐구</th>
-            <th class="col-center">판정</th>
-            <th class="col-center">점수</th>
+            <th class="col-center">단순 합</th>
+            <th class="col-center">반영 비율 합</th>
+            <th class="col-center">유불리</th>
+            <th class="col-center">점수차</th>
             <th>추가정보</th>
             <th></th>
           </tr>
@@ -343,30 +345,39 @@ class ScoringEngine {
   }
 
   // Returns {value, bonusInfos:[...]} for a single domain (gu/su/tam), or {value:null} for en/han
-  domainValue(scores, student, row, domain, scoreType, tamguN) {
+  // 가산점(mathBonus/tamBonus)은 현재 실제 계산(반영 비율 합/단순 합/유불리)에는 반영하지 않고,
+  // 모집단위 카드의 "추가정보" 배지로만 안내한다 (bonusPolicyBadges 참고). 반영 방식은 추후 결정.
+  // includeBonus 파라미터는 남겨두되 기본값을 false로 고정해, 항상 가산점 미반영 순수값을 반환한다.
+  domainValue(scores, student, row, domain, scoreType, tamguN, includeBonus = false) {
     const bonusInfos = [];
     if (domain === 'gu') {
       return { value: scoreType === '백분위' ? scores.gu.pct : scores.gu.std, bonusInfos };
     }
     if (domain === 'su') {
       let v = scoreType === '백분위' ? scores.su.pct : scores.su.std;
-      const key = MATH_KEY[student.su.subject];
-      if (key) {
-        const b = parseBonus(row.mathBonus[key]);
-        const r = applyBonus(v, b, MATH_LABEL_IN_DATA[key]);
-        v = r.value; if (r.info) bonusInfos.push(r.info);
+      if (includeBonus) {
+        const key = MATH_KEY[student.su.subject];
+        if (key) {
+          const b = parseBonus(row.mathBonus[key]);
+          const r = applyBonus(v, b, MATH_LABEL_IN_DATA[key]);
+          v = r.value; if (r.info) bonusInfos.push(r.info);
+        }
       }
       return { value: v, bonusInfos };
     }
     if (domain === 'tam') {
       const v1raw = ScoringEngine.tamSubjectMetric(scores.tam1, scoreType);
       const v2raw = ScoringEngine.tamSubjectMetric(scores.tam2, scoreType);
-      const bonusKey1 = scores.tam1.category === '사탐' ? 'sa' : 'gwa';
-      const bonusKey2 = scores.tam2.category === '사탐' ? 'sa' : 'gwa';
-      const b1 = applyBonus(v1raw, parseBonus(row.tamBonus[bonusKey1]), scores.tam1.category);
-      const b2 = applyBonus(v2raw, parseBonus(row.tamBonus[bonusKey2]), scores.tam2.category);
-      if (b1.info) bonusInfos.push(b1.info);
-      if (b2.info && b2.info.text !== (b1.info && b1.info.text)) bonusInfos.push(b2.info);
+      let b1 = { value: v1raw, info: null };
+      let b2 = { value: v2raw, info: null };
+      if (includeBonus) {
+        const bonusKey1 = scores.tam1.category === '사탐' ? 'sa' : 'gwa';
+        const bonusKey2 = scores.tam2.category === '사탐' ? 'sa' : 'gwa';
+        b1 = applyBonus(v1raw, parseBonus(row.tamBonus[bonusKey1]), scores.tam1.category);
+        b2 = applyBonus(v2raw, parseBonus(row.tamBonus[bonusKey2]), scores.tam2.category);
+        if (b1.info) bonusInfos.push(b1.info);
+        if (b2.info && b2.info.text !== (b1.info && b1.info.text)) bonusInfos.push(b2.info);
+      }
       // 탐구 2과목 반영 시 결합 방식은 scoreType에 따라 다름 (원본 엑셀 수식 기준):
       //  - 표준점수: 두 과목 표준점수의 합
       //  - 표준점수(탐-변표): 두 과목 자체변표(byeon) 값의 합
@@ -500,22 +511,27 @@ class ScoringEngine {
       }
     }
 
-    // baseline: simple equal-weight average of gu/su/tam using the SAME scoreType/tamguN as this row
+    // baseline: 국어+수학+탐구(결합값) 원점수를 그냥 합산 (원본 엑셀 L5/L7/L8 방식, 평균 아님)
+    // 가산점은 반영하지 않음 (domainValue 기본값 참고) — 순수 반영비율 차이만으로 유불리를 비교한다.
     const guV = this.domainValue(scores, student, row, 'gu', scoreType, tamguN).value;
     const suV = this.domainValue(scores, student, row, 'su', scoreType, tamguN).value;
     const tamV = this.domainValue(scores, student, row, 'tam', scoreType, tamguN).value;
-    const baseline = (guV + suV + tamV) / 3;
+    const baseline = guV + suV + tamV;
 
     const eligibilityIssues = this.checkEligibility(student, scores, row);
 
-    let verdict = null, diff = null;
+    // result.score는 (반영비율 합으로 정규화된) 가중평균 스케일이므로, baseline(합산 스케일)과
+    // 비교하려면 3배로 환산해 "3개 영역 합" 스케일로 맞춰준다 (원본 엑셀 K13의 *R*3 항과 동일한 역할).
+    // 이 값("반영비율 합")을 그대로 화면에도 노출한다.
+    let verdict = null, diff = null, comparableScore = null;
     if (result.score != null) {
-      diff = Math.round((result.score - baseline) * 100) / 100;
+      comparableScore = result.score * 3;
+      diff = Math.round((comparableScore - baseline) * 100) / 100;
       verdict = diff >= 0 ? '유리' : '불리';
     }
 
     return {
-      row, result, baseline, verdict, diff, eligibilityIssues,
+      row, result, baseline, comparableScore, verdict, diff, eligibilityIssues,
       noteText: specialRule && specialRule.type === 'note' ? specialRule.note : null,
       eligibilityText: specialRule && specialRule.type === 'eligibility' ? row.special : null,
     };
@@ -782,6 +798,8 @@ class ScoringEngine {
         verdictHtml = `<span class="pill pill-bad">불리</span>`;
         scoreHtml = `<span class="diff num">${fmt(evalResult.diff)}</span>`;
       }
+      const baselineHtml = `<span class="num">${fmt(evalResult.baseline)}</span>`;
+      const comparableHtml = `<span class="num">${fmt(evalResult.comparableScore)}</span>`;
       return `<tr>
         <td><div class="uni-name">${row.univ}</div><div class="unit-name">${rowLabel(row, rows)} (${row.group}군)</div></td>
         <td class="center"><span class="capacity-num">${row.capacity ?? '-'}</span></td>
@@ -789,6 +807,8 @@ class ScoringEngine {
         <td class="center">${domainRatioHtml(r, 'gu')}</td>
         <td class="center">${domainRatioHtml(r, 'su')}</td>
         <td class="center">${domainRatioHtml(r, 'tam')}</td>
+        <td class="center">${baselineHtml}</td>
+        <td class="center">${comparableHtml}</td>
         <td class="center">${verdictHtml}</td>
         <td class="center">${scoreHtml}</td>
         <td>${additionalInfoHtml(item)}</td>
