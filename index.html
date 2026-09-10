@@ -23,6 +23,10 @@
     --rank1:#8A6423;
     --focus:#2A46B8;
     --shadow: 0 1px 2px rgba(23,31,46,0.06), 0 8px 24px -12px rgba(23,31,46,0.18);
+    --card-bronze:#FAF6EC; --card-bronze-border:#DCC79A; --card-bronze-accent:#8A6423;
+    --card-gray:#F1F2F4; --card-gray-border:#D3D8E1; --card-gray-accent:#333D52;
+    --card-burgundy:#F8F0F1; --card-burgundy-border:#D9AEB4; --card-burgundy-accent:#7A2E39;
+    --print-accent:#7A2E39; --print-accent-hover:#8F3846;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -43,6 +47,9 @@
       --warn-soft:#3A2E14;
       --rank1:#D8B672;
       --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+      --card-bronze:#211B0F; --card-bronze-border:#4A3D22; --card-bronze-accent:#D8B672;
+      --card-gray:#191F2A; --card-gray-border:#2E3746; --card-gray-accent:#93A2C0;
+      --card-burgundy:#241519; --card-burgundy-border:#4A2A31; --card-burgundy-accent:#D68C97;
     }
   }
   :root[data-theme="dark"]{
@@ -63,6 +70,9 @@
     --warn-soft:#3A2E14;
     --rank1:#D8B672;
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+    --card-bronze:#211B0F; --card-bronze-border:#4A3D22; --card-bronze-accent:#D8B672;
+    --card-gray:#191F2A; --card-gray-border:#2E3746; --card-gray-accent:#93A2C0;
+    --card-burgundy:#241519; --card-burgundy-border:#4A2A31; --card-burgundy-accent:#D68C97;
   }
 
   *{box-sizing:border-box;}
@@ -106,6 +116,19 @@
     padding:20px 22px; box-shadow:var(--shadow);
   }
   .card > * + *{margin-top:14px;}
+  #inputCard, #pickCard, #compareCard{border-top-width:3px; padding-top:18px;}
+  #inputCard{
+    background:linear-gradient(180deg, var(--card-bronze) 0%, var(--surface) 260px);
+    border-color:var(--card-bronze-border); border-top-color:var(--card-bronze-accent);
+  }
+  #pickCard{
+    background:linear-gradient(180deg, var(--card-gray) 0%, var(--surface) 160px);
+    border-color:var(--card-gray-border); border-top-color:var(--card-gray-accent);
+  }
+  #compareCard{
+    background:linear-gradient(180deg, var(--card-burgundy) 0%, var(--surface) 260px);
+    border-color:var(--card-burgundy-border); border-top-color:var(--card-burgundy-accent);
+  }
 
   .privacy{
     font-size:.78rem; color:var(--ink-muted); background:var(--surface-2);
@@ -138,6 +161,8 @@
   .btn-ghost:hover{background:var(--surface-2);}
   .btn-small{padding:5px 10px; font-size:.78rem;}
   button:disabled{opacity:.45; cursor:not-allowed;}
+  .btn-print{background:var(--print-accent); color:#fff; border-color:transparent;}
+  .btn-print:hover{background:var(--print-accent-hover);}
   .compare-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
   .print-title{display:none;}
 
@@ -183,6 +208,7 @@
   .badge{font-size:.72rem; padding:2px 7px; border-radius:6px; background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border);}
   .badge.flag{background:var(--warn-soft); color:var(--warn); border-color:transparent;}
   .badge.badge-applied{background:var(--accent-soft); color:var(--accent-ink); border-color:transparent; font-weight:600;}
+  .badge.badge-special{background:var(--card-burgundy-border); color:var(--card-burgundy-accent); border-color:transparent; font-weight:600;}
 
   .col-center, td.center{text-align:center;}
   .capacity-num{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; font-size:1.15rem; font-weight:700; color:var(--ink);}
@@ -273,7 +299,7 @@
   <section class="card" id="compareCard" hidden>
     <div class="compare-head">
       <h2>3. 비교표</h2>
-      <button type="button" class="btn-ghost no-print" id="printBtn">🖨️ 인쇄 / PDF 저장</button>
+      <button type="button" class="btn-print no-print" id="printBtn">🖨️ 인쇄 / PDF 저장</button>
     </div>
     <div class="print-title">정시 유불리 계산기 · 비교표</div>
     <div class="table-scroll">
@@ -569,7 +595,9 @@ class ScoringEngine {
     if (result.score != null) {
       comparableScore = result.score * 3;
       diff = Math.round((comparableScore - baseline) * 100) / 100;
-      verdict = diff >= 0 ? '유리' : '불리';
+      // 반영비율 합이 단순 합과 정확히 같은 경우(예: 국/수/탐 반영비율이 모두 동일한 대학)는
+      // 유리하지도 불리하지도 않은 "동일"로 표시한다 (diff===0을 무조건 "유리"로 판정하지 않음).
+      verdict = diff > 0 ? '유리' : diff < 0 ? '불리' : '동일';
     }
 
     return {
@@ -771,9 +799,10 @@ class ScoringEngine {
     // 가산점은 실제 점수 계산(단순합/반영비율합/유불리)에는 반영하지 않으므로
     // 별도 문구 없이 강조 스타일로만 구분한다.
     const badges = [];
+    const roundNice = v => Math.round(v * 100) / 100; // 부동소수점 오차(예: 7.000000000000001) 표시 방지
     const bonusText = (b, labelPrefix) => {
-      if (b.type === 'pct') return `${labelPrefix} 선택 시 +${b.value}% 가산`;
-      if (b.type === 'flat') return `${labelPrefix} 선택 시 +${b.value}점 가산`;
+      if (b.type === 'pct') return `${labelPrefix} 선택 시 +${roundNice(b.value)}% 가산`;
+      if (b.type === 'flat') return `${labelPrefix} 선택 시 +${roundNice(b.value)}점 가산`;
       return `${labelPrefix} 선택 시 가산 조건 있음 ("${b.text}", 자동계산 제외)`;
     };
 
@@ -814,6 +843,11 @@ class ScoringEngine {
     badges.push(...bonusPolicyBadges(row, studentInput));
     if (row.minReq) badges.push(`<span class="badge">최저학력기준: ${row.minReq}</span>`);
     if (evalResult.eligibilityText) badges.push(`<span class="badge">${evalResult.eligibilityText}</span>`);
+    // "특이사항 적용" 대학은 그 특이사항이 실제로 무엇인지 추가정보에 함께 기록한다.
+    // (eligibility 유형은 위에서 이미 동일한 문구를 badge로 보여주므로 중복 표시하지 않는다.)
+    if (row.special && evalResult.eligibilityText !== row.special) {
+      badges.push(`<span class="badge badge-special">특이사항: ${row.special}</span>`);
+    }
     if (evalResult.noteText) badges.push(`<span class="badge flag">${evalResult.noteText}</span>`);
     (evalResult.eligibilityIssues || []).forEach(t => badges.push(`<span class="badge flag">⚠ ${t}</span>`));
     if (evalResult.result.manualExclude) badges.push(`<span class="badge flag">⚠ 반영방식이 복잡하여 자동계산 불가 — 대학 공지 확인 필요</span>`);
@@ -860,8 +894,12 @@ class ScoringEngine {
       } else if (evalResult.verdict === '유리') {
         verdictHtml = `<span class="pill pill-good">유리</span>`;
         scoreHtml = `<span class="diff num">+${fmt(evalResult.diff)}</span>`;
-      } else {
+      } else if (evalResult.verdict === '불리') {
         verdictHtml = `<span class="pill pill-bad">불리</span>`;
+        scoreHtml = `<span class="diff num">${fmt(evalResult.diff)}</span>`;
+      } else {
+        // 단순 합과 반영 비율 합이 정확히 같은 경우: 유리하지도 불리하지도 않은 "동일"
+        verdictHtml = `<span class="pill pill-muted">동일</span>`;
         scoreHtml = `<span class="diff num">${fmt(evalResult.diff)}</span>`;
       }
       const baselineHtml = `<span class="num baseline-num">${fmt(evalResult.baseline)}</span>`;
