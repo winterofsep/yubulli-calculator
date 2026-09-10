@@ -20,6 +20,7 @@
     --bad-soft:#FBEAEA;
     --warn:#93650B;
     --warn-soft:#FBF1DD;
+    --rank1:#8A6423;
     --focus:#2A46B8;
     --shadow: 0 1px 2px rgba(23,31,46,0.06), 0 8px 24px -12px rgba(23,31,46,0.18);
   }
@@ -40,6 +41,7 @@
       --bad-soft:#3A1E1F;
       --warn:#E3B45B;
       --warn-soft:#3A2E14;
+      --rank1:#D8B672;
       --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
     }
   }
@@ -59,6 +61,7 @@
     --bad-soft:#3A1E1F;
     --warn:#E3B45B;
     --warn-soft:#3A2E14;
+    --rank1:#D8B672;
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
   }
 
@@ -78,6 +81,18 @@
   h2{font-size:1.15rem; font-weight:600;}
   .lede{color:var(--ink-muted); font-size:.92rem; max-width:64ch;}
   .num{font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums;}
+  .pick-hint{
+    margin-top:14px; padding-top:12px; border-top:1px solid var(--border);
+    color:var(--good); font-size:.88rem; font-weight:600; min-height:1em;
+  }
+  .pick-hint:empty{margin-top:0; padding-top:0; border-top:none;}
+  .pick-hint:not(:empty)::before{content:"✓ ";}
+
+  .baseline-num{color:var(--ink-muted);}
+  .comparable-num{color:var(--accent-ink); font-weight:700;}
+  .ratio-rank-top{color:var(--rank1); font-weight:700;}
+  .ratio-rank-mid{color:var(--ink); font-weight:600;}
+  .ratio-rank-low{color:var(--ink-muted); font-weight:500;}
 
   header.top{display:flex; flex-direction:column; gap:8px;}
   .eyebrow{
@@ -123,6 +138,8 @@
   .btn-ghost:hover{background:var(--surface-2);}
   .btn-small{padding:5px 10px; font-size:.78rem;}
   button:disabled{opacity:.45; cursor:not-allowed;}
+  .compare-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .print-title{display:none;}
 
   .err{color:var(--bad); font-size:.85rem; font-weight:500;}
 
@@ -189,6 +206,25 @@
   dialog::backdrop{background:rgba(10,14,22,.5);}
   dialog .dlg-body{padding:20px 22px; display:flex; flex-direction:column; gap:12px;}
   [hidden]{display:none !important;}
+
+  @media print{
+    body{background:#fff;}
+    body *{visibility:hidden;}
+    #compareCard, #compareCard *{visibility:visible;}
+    #compareCard{
+      position:absolute; left:0; top:0; width:100%;
+      box-shadow:none; border:none; padding:0; background:#fff;
+    }
+    .no-print, .remove-btn{display:none !important;}
+    .print-title{
+      display:block; font-family:'Noto Serif KR', serif; font-weight:700;
+      font-size:1.2rem; color:#171F2E; margin-bottom:10px;
+    }
+    .table-scroll{overflow:visible; border:none;}
+    thead th{position:static; background:#EAEEF3 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    #compareTable{font-size:.78rem;}
+    .badge, .pill{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
 </style>
 
 <div class="wrap">
@@ -231,11 +267,15 @@
         <select id="rowSelect" disabled><option value="">대학을 먼저 선택하세요</option></select>
       </div>
     </div>
-    <div id="pickPreview" class="lede" style="margin:0;"></div>
+    <div id="pickPreview" class="pick-hint"></div>
   </section>
 
   <section class="card" id="compareCard" hidden>
-    <h2>3. 비교표</h2>
+    <div class="compare-head">
+      <h2>3. 비교표</h2>
+      <button type="button" class="btn-ghost no-print" id="printBtn">🖨️ 인쇄 / PDF 저장</button>
+    </div>
+    <div class="print-title">정시 유불리 계산기 · 비교표</div>
     <div class="table-scroll">
       <table id="compareTable">
         <thead>
@@ -717,6 +757,8 @@ class ScoringEngine {
   const compareCard = document.getElementById('compareCard');
   const compareBody = document.getElementById('compareBody');
   const compareEmpty = document.getElementById('compareEmpty');
+  const printBtn = document.getElementById('printBtn');
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
 
   function fmt(n) { return n == null ? '—' : (Math.round(n * 100) / 100).toLocaleString('ko-KR'); }
 
@@ -778,9 +820,30 @@ class ScoringEngine {
     return `<div class="badge-row">${badges.join('')}</div>`;
   }
 
-  function domainRatioHtml(r, domain) {
+  function domainRatioHtml(r, domain, rankClass) {
     const u = (r.used || []).find(x => x.domain === domain);
-    return u ? `<span class="num">${u.ratio}%</span>` : `<span class="num">—</span>`;
+    if (!u) return `<span class="num">—</span>`;
+    const cls = rankClass ? ` ${rankClass}` : '';
+    return `<span class="num${cls}">${u.ratio}%</span>`;
+  }
+
+  // 국어/수학/탐구 반영비율을 순위별로 색상 구분하기 위한 클래스 맵을 계산한다.
+  // 값이 모두 같으면(균등 반영) 굳이 순위를 나누지 않는다.
+  function domainRatioRankClasses(r) {
+    const domains = ['gu', 'su', 'tam'];
+    const entries = domains
+      .map(d => ({ d, ratio: (r.used || []).find(x => x.domain === d)?.ratio }))
+      .filter(e => e.ratio != null);
+    const uniqueDesc = [...new Set(entries.map(e => e.ratio))].sort((a, b) => b - a);
+    const map = {};
+    if (uniqueDesc.length <= 1) return map; // 전부 동일 → 강조 없음
+    entries.forEach(e => {
+      const idx = uniqueDesc.indexOf(e.ratio);
+      if (idx === 0) map[e.d] = 'ratio-rank-top';
+      else if (idx === uniqueDesc.length - 1) map[e.d] = 'ratio-rank-low';
+      else map[e.d] = 'ratio-rank-mid';
+    });
+    return map;
   }
 
   function renderCompare() {
@@ -801,16 +864,17 @@ class ScoringEngine {
         verdictHtml = `<span class="pill pill-bad">불리</span>`;
         scoreHtml = `<span class="diff num">${fmt(evalResult.diff)}</span>`;
       }
-      const baselineHtml = `<span class="num">${fmt(evalResult.baseline)}</span>`;
-      const comparableHtml = `<span class="num">${fmt(evalResult.comparableScore)}</span>`;
+      const baselineHtml = `<span class="num baseline-num">${fmt(evalResult.baseline)}</span>`;
+      const comparableHtml = `<span class="num comparable-num">${fmt(evalResult.comparableScore)}</span>`;
+      const rankCls = domainRatioRankClasses(r);
       return `<tr>
         <td><div class="uni-name">${row.univ}</div><div class="unit-name">${rowLabel(row, rows)}</div></td>
         <td class="center">(${row.group})</td>
         <td class="center"><span class="capacity-num">${row.capacity ?? '-'}</span></td>
         <td>${row.scoreType}${row.special ? '<div class="unit-name">특이사항 적용</div>' : ''}</td>
-        <td class="center">${domainRatioHtml(r, 'gu')}</td>
-        <td class="center">${domainRatioHtml(r, 'su')}</td>
-        <td class="center">${domainRatioHtml(r, 'tam')}</td>
+        <td class="center">${domainRatioHtml(r, 'gu', rankCls.gu)}</td>
+        <td class="center">${domainRatioHtml(r, 'su', rankCls.su)}</td>
+        <td class="center">${domainRatioHtml(r, 'tam', rankCls.tam)}</td>
         <td class="center">${baselineHtml}</td>
         <td class="center">${comparableHtml}</td>
         <td class="center">${verdictHtml}</td>
