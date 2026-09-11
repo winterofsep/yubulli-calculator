@@ -949,11 +949,13 @@ class ScoringEngine {
     // 다음 대학을 바로 이어서 검색할 수 있도록 선택 영역을 초기화
     lastMatchedUniv = null;
     univInput.value = '';
-    hideUnivSuggest();
     rowSelect.disabled = true;
     rowSelect.innerHTML = '<option>대학을 먼저 선택하세요</option>';
     pickPreview.textContent = '추가되었습니다. 다른 대학을 이어서 검색해 보세요.';
     univInput.focus();
+    // focus()가 동기적으로 'focus' 리스너(renderUnivSuggest)를 다시 트리거해서 전체 목록이
+    // 뜨는 것을 막는다 — 대학을 추가한 직후에는 목록이 자동으로 뜨지 않는 게 자연스럽다.
+    hideUnivSuggest();
   });
 
   /* ---------- comparison table ---------- */
