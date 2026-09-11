@@ -173,6 +173,22 @@
   @media (max-width:760px){ .uni-picker{grid-template-columns:1fr;} }
   .uni-picker .fld{display:flex; flex-direction:column; gap:6px;}
 
+  /* 대학명 자동완성: iOS Safari(아이폰)는 <input list>/<datalist> 제안 목록을 렌더링하지 않으므로
+     (아이패드/데스크톱 브라우저와 달리) 자체 드롭다운을 직접 그린다. */
+  .univ-input-wrap{position:relative;}
+  .univ-suggest{
+    position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    box-shadow:var(--shadow); max-height:260px; overflow-y:auto; padding:4px;
+  }
+  .univ-suggest button{
+    display:block; width:100%; text-align:left; background:none; border:none;
+    padding:9px 10px; border-radius:8px; font:inherit; font-size:.92rem; color:var(--ink);
+    cursor:pointer;
+  }
+  .univ-suggest button:hover, .univ-suggest button.active{background:var(--surface-2);}
+  .univ-suggest .no-match{padding:9px 10px; color:var(--ink-muted); font-size:.85rem;}
+
   table{border-collapse:collapse; width:100%; font-size:.86rem;}
   .table-scroll{overflow-x:auto; border-radius:12px; border:1px solid var(--border);}
   thead th{
@@ -299,8 +315,12 @@
     <div class="uni-picker">
       <div class="fld">
         <label for="univInput">대학</label>
-        <input list="univList" id="univInput" type="text" placeholder="대학명 입력 또는 선택" autocomplete="off" />
-        <datalist id="univList"></datalist>
+        <div class="univ-input-wrap">
+          <input id="univInput" type="text" placeholder="대학명 입력 또는 선택" autocomplete="off"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="univSuggest" />
+          <div id="univSuggest" class="univ-suggest" role="listbox" hidden></div>
+        </div>
       </div>
       <div class="fld">
         <label for="rowSelect">모집단위</label>
@@ -810,12 +830,49 @@ class ScoringEngine {
 
   /* ---------- university picker ---------- */
   const univNames = DATA.universityNames || [];
-  const univList = document.getElementById('univList');
-  univNames.forEach(n => univList.insertAdjacentHTML('beforeend', `<option value="${n}"></option>`));
 
   const univInput = document.getElementById('univInput');
   const rowSelect = document.getElementById('rowSelect');
   const pickPreview = document.getElementById('pickPreview');
+
+  // 대학명 자동완성 드롭다운 (아이폰 Safari가 <input list>/<datalist> 제안 UI를 그리지 않는 문제 우회).
+  // 입력창을 탭(포커스)하기만 해도 전체 대학 목록이 바로 나열되어, 검색뿐 아니라
+  // "모집단위" 선택처럼 목록을 훑어보며 고를 수도 있다 — 타이핑은 목록을 좁히는 용도.
+  const univSuggest = document.getElementById('univSuggest');
+
+  function renderUnivSuggest(query) {
+    const q = query.trim();
+    const matches = q ? univNames.filter(n => n.includes(q)) : univNames;
+    if (matches.length === 0) {
+      univSuggest.innerHTML = '<div class="no-match">일치하는 대학이 없습니다</div>';
+    } else {
+      univSuggest.innerHTML = matches
+        .map(n => `<button type="button" role="option" data-name="${n}">${n}</button>`)
+        .join('');
+    }
+    univSuggest.hidden = false;
+    univInput.setAttribute('aria-expanded', 'true');
+  }
+  function hideUnivSuggest() {
+    univSuggest.hidden = true;
+    univInput.setAttribute('aria-expanded', 'false');
+  }
+  // click보다 먼저 발생하는 mousedown/touchstart에서 선택을 처리해야, input의 blur로
+  // 목록이 먼저 숨어버려서 클릭(탭)이 무시되는 문제를 막을 수 있다.
+  function selectUnivFromSuggest(name) {
+    univInput.value = name;
+    hideUnivSuggest();
+    refreshUnivPick();
+  }
+  univSuggest.addEventListener('mousedown', (e) => {
+    const btn = e.target.closest('button[data-name]');
+    if (!btn) return;
+    e.preventDefault();
+    selectUnivFromSuggest(btn.dataset.name);
+  });
+  univInput.addEventListener('focus', () => renderUnivSuggest(univInput.value));
+  univInput.addEventListener('blur', () => { setTimeout(hideUnivSuggest, 150); });
+  univInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideUnivSuggest(); });
 
   // 같은 대학 안에 같은 모집단위명(unit)이 여러 전형에 걸쳐 있으면 "모집단위명(전형명)"으로 구분 표기
   function rowLabel(row, rows) {
@@ -859,7 +916,10 @@ class ScoringEngine {
     });
   }
   // 'input'은 타이핑/자동완성 선택 시 즉시, 'change'는 블러/엔터 시 보조로 동작 — 둘 다 걸어 브라우저별 차이를 방지
-  univInput.addEventListener('input', refreshUnivPick);
+  univInput.addEventListener('input', () => {
+    renderUnivSuggest(univInput.value);
+    refreshUnivPick();
+  });
   univInput.addEventListener('change', refreshUnivPick);
 
   let compareSeq = 0;
@@ -889,6 +949,7 @@ class ScoringEngine {
     // 다음 대학을 바로 이어서 검색할 수 있도록 선택 영역을 초기화
     lastMatchedUniv = null;
     univInput.value = '';
+    hideUnivSuggest();
     rowSelect.disabled = true;
     rowSelect.innerHTML = '<option>대학을 먼저 선택하세요</option>';
     pickPreview.textContent = '추가되었습니다. 다른 대학을 이어서 검색해 보세요.';
