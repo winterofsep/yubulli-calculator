@@ -712,6 +712,14 @@ class ScoringEngine {
       `;
       baselineResult.hidden = false;
       pickCard.hidden = false;
+      // 이미 비교표에 추가해 둔 대학이 있다면, 새로 계산된 점수로 다시 평가해서 반영한다.
+      // (성적을 고쳐서 다시 계산했는데 비교표가 옛날 점수 그대로 남아있으면 안 되므로)
+      if (compareList.length > 0) {
+        compareList.forEach(item => {
+          item.evalResult = engine.evaluate(studentInput, studentScores, item.row);
+        });
+        renderCompare();
+      }
       logEvent('calc', { gu: s.gu.pct, su: s.su.pct, tam1: s.tam1.pct, tam2: s.tam2.pct });
     } catch (e) {
       errEl.textContent = e.message;
