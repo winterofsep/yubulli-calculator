@@ -165,7 +165,7 @@
   .btn-print:hover{background:var(--print-accent-hover);}
   .compare-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
   .compare-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .print-title{display:none;}
+  .print-only{display:none;}
 
   .err{color:var(--bad); font-size:.85rem; font-weight:500;}
 
@@ -236,16 +236,29 @@
 
   @media print{
     body{background:#fff;}
-    body *{visibility:hidden;}
-    #compareCard, #compareCard *{visibility:visible;}
-    #compareCard{
-      position:absolute; left:0; top:0; width:100%;
-      box-shadow:none; border:none; padding:0; background:#fff;
+    /* #compareCard 하나만 남기고 나머지 섹션은 레이아웃 공간 자체를 차지하지 않도록 완전히 제거한다.
+       (visibility:hidden만 쓰면 숨긴 섹션들의 높이가 그대로 남아 불필요한 빈 페이지가 생긴다) */
+    .wrap > *{display:none !important;}
+    .wrap > #compareCard{
+      display:block !important;
+      box-shadow:none; border:none; padding:0 0 40px; background:#fff;
     }
-    .no-print, .remove-btn{display:none !important;}
+    .compare-head, .no-print, .remove-btn{display:none !important;}
+    .print-only{display:block;}
     .print-title{
-      display:block; font-family:'Noto Serif KR', serif; font-weight:700;
-      font-size:1.2rem; color:#171F2E; margin-bottom:10px;
+      font-family:'Noto Serif KR', serif; font-weight:700;
+      font-size:1.2rem; color:#171F2E; margin-bottom:14px;
+    }
+    .print-baseline{margin-bottom:18px;}
+    .print-baseline h3{
+      font-family:'IBM Plex Sans KR', sans-serif; font-size:.92rem; font-weight:700;
+      color:#171F2E; margin-bottom:8px;
+    }
+    .print-baseline .mini-table{width:auto;}
+    .print-footer{
+      position:fixed; left:0; bottom:0; width:100%;
+      text-align:center; font-size:.78rem; color:#5B6577;
+      padding:8px 0; border-top:1px solid #D9E0E8; background:#fff;
     }
     .table-scroll{overflow:visible; border:none;}
     thead th{position:static; background:#EAEEF3 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
@@ -305,7 +318,16 @@
         <button type="button" class="btn-print" id="printBtn">🖨️ 인쇄 / PDF 저장</button>
       </div>
     </div>
-    <div class="print-title">정시 유불리 계산기 · 비교표</div>
+    <div class="print-only print-title">정시 대학별 유불리 판단(가채점 버전)</div>
+    <div class="print-only print-baseline">
+      <h3>가채점 예상 성적</h3>
+      <table class="mini-table" id="printBaselineTable">
+        <thead>
+          <tr><th></th><th>국어</th><th>수학</th><th>탐구1</th><th>탐구2</th></tr>
+        </thead>
+        <tbody id="printBaselineBody"></tbody>
+      </table>
+    </div>
     <div class="table-scroll">
       <table id="compareTable">
         <thead>
@@ -329,6 +351,7 @@
       </table>
     </div>
     <div class="empty" id="compareEmpty">선택된 대학이 없습니다. 위에서 대학과 모집단위를 선택하면 바로 표에 나타납니다.</div>
+    <div class="print-only print-footer">이투스교육평가연구소X고랩</div>
   </section>
 
   <p class="privacy">이 페이지는 통계 및 서비스 개선을 위해 입력하신 점수 구간과 조회한 대학·모집단위 정보를 브라우저별 익명 식별자로 저장합니다. 이름, 연락처 등 개인을 알아볼 수 있는 정보는 수집하지 않습니다. 계산 결과는 2026학년도 가채점 예상 자료를 바탕으로 한 참고용 근사치이며, 최종 표준점수·백분위 및 대학별 최종 반영방식은 성적 발표 후 공식 자료를 확인하시기 바랍니다.</p>
@@ -707,6 +730,17 @@ class ScoringEngine {
     return s.replace(/1$/, 'Ⅰ').replace(/2$/, 'Ⅱ');
   }
 
+  // 화면(1. 원점수 입력)과 인쇄용(3. 비교표 상단) 가채점 예상 성적 표는 내용이 항상 같아야 하므로
+  // 마크업 생성을 한 곳에 모아 재사용한다.
+  function baselineRowsHtml(cols) {
+    return `
+      <tr><th scope="row">선택과목</th>${cols.map(c => `<td class="subj-cell">${subjectLabel(c.subject)}</td>`).join('')}</tr>
+      <tr><th scope="row">표준점수</th>${cols.map(c => `<td>${c.std}</td>`).join('')}</tr>
+      <tr><th scope="row">백분위</th>${cols.map(c => `<td>${c.pct}</td>`).join('')}</tr>
+      <tr><th scope="row">등급</th>${cols.map(c => `<td>${c.grade}</td>`).join('')}</tr>
+    `;
+  }
+
   document.getElementById('calcBtn').addEventListener('click', () => {
     errEl.hidden = true;
     try {
@@ -714,12 +748,10 @@ class ScoringEngine {
       studentScores = engine.computeStudentScores(studentInput);
       const s = studentScores;
       const cols = [s.gu, s.su, s.tam1, s.tam2];
-      baselineBody.innerHTML = `
-        <tr><th scope="row">선택과목</th>${cols.map(c => `<td class="subj-cell">${subjectLabel(c.subject)}</td>`).join('')}</tr>
-        <tr><th scope="row">표준점수</th>${cols.map(c => `<td>${c.std}</td>`).join('')}</tr>
-        <tr><th scope="row">백분위</th>${cols.map(c => `<td>${c.pct}</td>`).join('')}</tr>
-        <tr><th scope="row">등급</th>${cols.map(c => `<td>${c.grade}</td>`).join('')}</tr>
-      `;
+      const baselineHtml = baselineRowsHtml(cols);
+      baselineBody.innerHTML = baselineHtml;
+      const printBaselineBody = document.getElementById('printBaselineBody');
+      if (printBaselineBody) printBaselineBody.innerHTML = baselineHtml;
       baselineResult.hidden = false;
       pickCard.hidden = false;
       // 이미 비교표에 추가해 둔 대학이 있다면, 새로 계산된 점수로 다시 평가해서 반영한다.
